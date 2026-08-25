@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { buildGraphForWorktree } from "../graph/walker.js";
+import { getCurrentCommit, getMergeBase } from "../detector/git.js";
+import { buildChangedSymbolGraph } from "../detector/changed.js";
+import { detectConflicts } from "../detector/overlap.js";
 
 const [, , cmd, pathA, pathB] = process.argv;
 
@@ -18,8 +20,27 @@ for (const p of [pathA, pathB]) {
 
 console.log(`Checking ${pathA} against ${pathB}...`);
 
-const graphA = buildGraphForWorktree(pathA);
-const graphB = buildGraphForWorktree(pathB);
+const commitA = getCurrentCommit(pathA);
+const commitB = getCurrentCommit(pathB);
+const mergeBase = getMergeBase(pathA, commitA, commitB);
 
-console.log(`Worktree A: ${graphA.size} unique symbol names`);
-console.log(`Worktree B: ${graphB.size} unique symbol names`);
+const changedInA = buildChangedSymbolGraph(pathA, mergeBase, commitA);
+const changedInB = buildChangedSymbolGraph(pathB, mergeBase, commitB);
+
+console.log(`Changed declarations in A: ${[...changedInA.keys()].join(", ") || "none"}`);
+console.log(`Changed declarations in B: ${[...changedInB.keys()].join(", ") || "none"}`);
+
+const candidates = detectConflicts(changedInA, changedInB, pathA, pathB);
+
+if (candidates.length === 0) {
+  console.log("\nNo conflict candidates found.");
+} else {
+  console.log(`\nFound ${candidates.length} conflict candidate(s):\n`);
+  for (const c of candidates) {
+    console.log(
+      `- "${c.symbolName}" changed in worktree ${c.changedIn} ` +
+        `(${c.changedAt.filePath}:${c.changedAt.startLine}-${c.changedAt.endLine}), ` +
+        `used in worktree ${c.usedIn} at ${c.usageLocation.filePath}:${c.usageLocation.line}`
+    );
+  }
+}
