@@ -7,6 +7,3 @@ class Calculator {
     this.total += n;
   }
 }
-function useAdd() {
-  return add(2, 3, 8);
-}
