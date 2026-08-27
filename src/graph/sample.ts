@@ -1,5 +1,5 @@
-function add(a: number, b: number, c: number): number {
-  return a + b + c;
+function add(a: number, b: number): number {
+  return a + b;
 }
 class Calculator {
   total: number = 0;
@@ -7,3 +7,9 @@ class Calculator {
     this.total += n;
   }
 }
+<<<<<<< HEAD
+=======
+function useAdd() {
+  return add(2, 3);
+}
+>>>>>>> main
