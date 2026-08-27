@@ -8,10 +8,5 @@ class Calculator {
   }
 }
 function useAdd() {
-<<<<<<< HEAD
-  return add(2, 3);
-}
-=======
   return add(2, 3, 8);
 }
->>>>>>> test-branch-a
