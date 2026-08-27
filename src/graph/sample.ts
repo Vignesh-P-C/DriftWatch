@@ -1,5 +1,5 @@
-function add(a: number, b: number, c: number): number {
-  return a + b + c;
+function add(a: number, b: number): number {
+  return a + b;
 }
 class Calculator {
   total: number = 0;
@@ -8,5 +8,5 @@ class Calculator {
   }
 }
 function useAdd() {
-  return add(2, 3, 8);
+  return add(2, 3);
 }
