@@ -24,3 +24,11 @@ export function getRawDiff(worktreePath: string, fromCommit: string, toCommit: s
     maxBuffer: 1024 * 1024 * 20,
   });
 }
+
+export function getWorkingTreeDiff(worktreePath: string, fromCommit: string): string {
+  return execFileSync("git", ["diff", "-U0", fromCommit], {
+    cwd: worktreePath,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 20,
+  });
+}
