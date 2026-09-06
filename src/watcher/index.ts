@@ -3,8 +3,9 @@ import { getCurrentCommit, getMergeBase } from "../detector/git.js";
 import { buildWorkingTreeChangedSymbolGraph } from "../detector/changed.js";
 import { detectConflicts } from "../detector/overlap.js";
 import { getReasoningProvider } from "../reasoning/index.js";
-import { writeState } from "../agent/adapter.js";
+import { writeState, writeFallbackAlerts } from "../agent/adapter.js";
 import { ExplainedConflict } from "../agent/types.js";
+
 
 const DEBOUNCE_MS = 300;
 const reasoningProvider = getReasoningProvider();
@@ -24,7 +25,10 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
     console.log(`[${timestamp}] No conflict candidates found.`);
     // Still write empty state so a stale HIGH conflict from a previous run
     // doesn't keep blocking edits after it's actually been resolved.
-    if (reasoningProvider) writeState(pathA, pathB, []);
+    if (reasoningProvider) {
+      writeState(pathA, pathB, []);
+      writeFallbackAlerts(pathA, pathB, []);
+    }
     return;
   }
 
@@ -55,6 +59,7 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
 
   if (reasoningProvider) {
     writeState(pathA, pathB, explained);
+    writeFallbackAlerts(pathA, pathB, explained);
   }
 }
 

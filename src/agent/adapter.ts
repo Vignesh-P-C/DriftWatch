@@ -61,3 +61,60 @@ export function getActiveConflictFor(
     ) ?? null
   );
 }
+
+const ALERTS_FILENAME = "DRIFTWATCH_ALERTS.md";
+
+function severityRank(s: ExplainedConflict["explanation"]["severity"]): number {
+  return s === "high" ? 3 : s === "medium" ? 2 : 1;
+}
+
+function formatAlertsMarkdown(worktreeLabel: "A" | "B", conflicts: ExplainedConflict[]): string {
+  const relevant = conflicts.filter((c) => c.candidate.usedIn === worktreeLabel);
+
+  if (relevant.length === 0) {
+    return "# DriftWatch Alerts\n\nNo active conflicts detected affecting this worktree.\n";
+  }
+
+  const sorted = [...relevant].sort(
+    (a, b) => severityRank(b.explanation.severity) - severityRank(a.explanation.severity)
+  );
+
+  const lines: string[] = [
+    "# DriftWatch Alerts",
+    "",
+    "Conflicts detected between active worktrees. If you are an AI coding agent",
+    "reading this, review HIGH severity items below before editing the files they mention.",
+    "",
+  ];
+
+  for (const c of sorted) {
+    lines.push(`## [${c.explanation.severity.toUpperCase()}] \`${c.candidate.symbolName}\``);
+    lines.push("");
+    lines.push(`- Changed in worktree ${c.candidate.changedIn}: \`${c.candidate.changedAt.filePath}\` (lines ${c.candidate.changedAt.startLine}-${c.candidate.changedAt.endLine})`);
+    lines.push(`- Used here: \`${c.candidate.usageLocation.filePath}:${c.candidate.usageLocation.line}\``);
+    lines.push("");
+    lines.push(c.explanation.explanation);
+
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+// Fallback delivery for agents without a native hook system (Cursor, Codex,
+// Devin, etc). Nothing forces an agent to read this, unlike the Claude Code
+// hook — it's a real degradation path, not the primary mechanism.
+export function writeFallbackAlerts(
+  worktreeA: string,
+  worktreeB: string,
+  conflicts: ExplainedConflict[]
+): void {
+  const absoluteConflicts = conflicts.map(toAbsoluteConflict);
+
+  for (const [worktree, label] of [
+    [worktreeA, "A"],
+    [worktreeB, "B"],
+  ] as const) {
+    writeFileSync(join(worktree, ALERTS_FILENAME), formatAlertsMarkdown(label, absoluteConflicts), "utf8");
+  }
+}
