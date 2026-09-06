@@ -40,3 +40,11 @@ Thumbs.db
 *.swp
 *.swo
 Documents/
+
+.driftwatch/
+
+# Local conversation/context logs (not part of the project)
+context/
+
+# Claude Code local overrides (personal, not shared config)
+.claude/settings.local.json
