@@ -3,6 +3,8 @@ import { getCurrentCommit, getMergeBase } from "../detector/git.js";
 import { buildWorkingTreeChangedSymbolGraph } from "../detector/changed.js";
 import { detectConflicts } from "../detector/overlap.js";
 import { getReasoningProvider } from "../reasoning/index.js";
+import { writeState } from "../agent/adapter.js";
+import { ExplainedConflict } from "../agent/types.js";
 
 const DEBOUNCE_MS = 300;
 const reasoningProvider = getReasoningProvider();
@@ -20,10 +22,15 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
   const timestamp = new Date().toLocaleTimeString();
   if (candidates.length === 0) {
     console.log(`[${timestamp}] No conflict candidates found.`);
+    // Still write empty state so a stale HIGH conflict from a previous run
+    // doesn't keep blocking edits after it's actually been resolved.
+    if (reasoningProvider) writeState(pathA, pathB, []);
     return;
   }
 
   console.log(`[${timestamp}] Found ${candidates.length} conflict candidate(s):`);
+  const explained: ExplainedConflict[] = [];
+
   for (const c of candidates) {
     console.log(
       `  - "${c.symbolName}" changed in worktree ${c.changedIn} ` +
@@ -31,15 +38,23 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
         `used in worktree ${c.usedIn} at ${c.usageLocation.filePath}:${c.usageLocation.line}`
     );
 
-
     if (reasoningProvider) {
       try {
-        const { severity, explanation } = await reasoningProvider.explainConflict(c);
-        console.log(`    [${severity.toUpperCase()}] ${explanation}`);
+        const explanation = await reasoningProvider.explainConflict(c);
+        console.log(`    [${explanation.severity.toUpperCase()}] ${explanation.explanation}`);
+        explained.push({ candidate: c, explanation });
       } catch (err) {
         console.log(`    (reasoning failed: ${(err as Error).message})`);
+        // Deliberately not pushed to `explained` — a candidate whose reasoning
+        // call failed has no severity, so it can't be evaluated by the hook.
+        // Excluding it means "fail open" for that one candidate specifically,
+        // not just at the whole-state level.
       }
     }
+  }
+
+  if (reasoningProvider) {
+    writeState(pathA, pathB, explained);
   }
 }
 
@@ -54,15 +69,14 @@ export function watch(pathA: string, pathB: string): void {
   };
 
   const watcher = chokidar.watch([pathA, pathB], {
-    ignored: /node_modules|\.git/,
-    ignoreInitial: true,
+  ignored: /node_modules|\.git|\.driftwatch/,
+  ignoreInitial: true,
   });
 
   watcher.on("all", (event, filePath) => {
     console.log(`[watch] ${event}: ${filePath}`);
     triggerCheck();
   });
-
 
   console.log(`Watching ${pathA} and ${pathB} for changes...`);
   if (!reasoningProvider) {
