@@ -76,16 +76,14 @@ The LLM layer isn't just flagging that something changed — in the same test ru
 
 ### Module Structure
 
-> ⚠️ **PLACEHOLDER — DO NOT COMMIT AS-IS.** This section is known incomplete. The real `src/` tree also contains `graph/inspect.ts`, `graph/walker.ts`, and `watcher/test-agent-adapter.ts`, none of which are described below, and the `agent/` module's three files are listed by filename only — their actual contents/purpose haven't been reviewed yet. This will be corrected once those six files are shared.
-
 ```
 src/
 ├── cli/
-│   └── index.ts              # CLI entry point — `check <pathA> <pathB>` / `watch <pathA> <pathB>`
+│   └── index.ts               # CLI entry point — `check <pathA> <pathB>` / `watch <pathA> <pathB>`
 │
 ├── detector/
-│   ├── changed.ts            # Symbol graphs from committed diffs AND live working-tree diffs
-│   ├── overlap.ts            # Cross-references changed symbols against usages in the other worktree
+│   ├── changed.ts             # Symbol graphs from committed diffs AND live working-tree diffs
+│   ├── overlap.ts             # Cross-references changed symbols against usages in the other worktree
 │   ├── diff.ts                # Parses `git diff -U0` output into precise per-hunk line ranges
 │   └── git.ts                 # Thin wrapper around the git CLI (diff, merge-base, working-tree diff)
 │
@@ -94,25 +92,30 @@ src/
 │   ├── types.ts                # SymbolGraph data structure + helpers
 │   ├── usage.ts                 # Finds where a given symbol name is referenced across a worktree
 │   ├── sample.ts                 # Manual test fixture used for end-to-end conflict scenarios
-│   ├── inspect.ts                # ⚠️ purpose not yet documented — pending file content
-│   └── walker.ts                 # ⚠️ purpose not yet documented — pending file content
+│   ├── inspect.ts                # Dev scratch script — parses sample.ts and prints its symbol graph for manual inspection. Not part of the CLI pipeline.
+│   └── walker.ts                 # Recursively walks an entire worktree and builds a full SymbolGraph across all files (buildGraphForWorktree). Not currently used by check/watch, which only diff changed symbols — groundwork for whole-repo analysis (multi-language support, realism testing).
 │
 ├── watcher/
-│   ├── index.ts               # chokidar-based live watcher — debounced re-checks on file save
-│   └── test-agent-adapter.ts  # ⚠️ manual test/demo script for the agent adapter — not an automated test suite
+│   └── index.ts                # chokidar-based live watcher — debounced re-checks on file save, feeds results into the agent adapter
 │
 ├── reasoning/
 │   ├── types.ts                # Provider-agnostic ReasoningProvider interface (BYOK contract)
 │   ├── gemini.ts                # Gemini implementation — rate-limited, code-aware prompting
 │   └── index.ts                 # Picks a provider from env vars; returns null if none configured
 │
-└── agent/
-    ├── pretooluse-hook.ts     # ⚠️ purpose not yet documented — pending file content
-    ├── adapter.ts               # ⚠️ purpose not yet documented — pending file content
-    └── types.ts                  # ⚠️ purpose not yet documented — pending file content
+├── agent/
+│   ├── types.ts                # ExplainedConflict / DriftwatchState shapes shared by the watcher and the hook
+│   ├── adapter.ts               # writeState() persists explained conflicts to .driftwatch/state.json in both worktrees; getActiveConflictFor() reads it back for a given file, filtered to HIGH severity only; writeFallbackAlerts() writes a human/agent-readable DRIFTWATCH_ALERTS.md for agents without native hook support
+│   └── pretooluse-hook.ts       # Claude Code PreToolUse hook entry point — reads hook JSON from stdin, checks for a HIGH conflict on the file about to be edited, and if found writes an explanation to stderr and exits 2 to block the edit
+│
+└── test-agent-adapter.ts      # Manual verification script for writeState/getActiveConflictFor (not an automated test — see Roadmap/tech debt)
 ```
 
-Phase 3 added the `agent/` module: context injection adapters that feed conflicts directly into a running agent rather than a human-facing output. Currently supports a Claude Code `PreToolUse` hook, plus a generic file/pipe-based fallback adapter for non-Claude-Code agents.
+Phase 3 added the `agent/` module: context injection adapters that feed conflicts directly into a running agent rather than a human-facing output. It supports a Claude Code `PreToolUse` hook, plus a generic file/pipe-based fallback adapter (`DRIFTWATCH_ALERTS.md`) for agents without native hook support (Cursor, Codex, Devin, etc).
+
+**Two things worth knowing about current behavior:**
+- **The differentiator requires a configured reasoning provider.** `writeState()` and `writeFallbackAlerts()` only run when a provider (currently Gemini) is configured — without an API key, no state file is ever written, so the hook has nothing to check and never blocks anything. Running key-less gives you Phase 1's raw conflict candidates only, not agent context injection.
+- **Only HIGH severity blocks an edit.** MEDIUM and LOW conflicts are surfaced in `DRIFTWATCH_ALERTS.md` but never trigger the `PreToolUse` hook — this is deliberate, so an agent isn't halted for minor, likely-safe changes.
 
 ### Key Design Decisions
 
@@ -135,9 +138,7 @@ Rather than inventing a new isolation mechanism, DriftWatch works directly with 
 The reasoning layer reads the actual source around both the changed declaration and the usage site and puts both in the prompt, rather than asking the LLM to reason from symbol names and line numbers alone. In testing, this was the difference between generic "could break" output on every candidate and correctly distinguishing safe refactors (rated LOW) from a real parameter-count mismatch (rated HIGH, with the specific discrepancy named).
 
 **Agent context injection over a human dashboard**
-Phase 3's `agent/` module hooks into Claude Code's `PreToolUse` event to inject a detected conflict directly into the running agent's context, so it can self-correct mid-task rather than a human having to notice a dashboard alert. A generic file/pipe-based fallback adapter covers agents without native hook support.
-
-*(This section will be expanded with real mechanism detail once `pretooluse-hook.ts`, `adapter.ts`, and `types.ts` are reviewed — right now it restates the commit messages, not verified implementation behavior.)*
+The `PreToolUse` hook reads the tool-call JSON Claude Code sends on stdin, checks whether the file about to be edited has an active HIGH-severity conflict, and if so writes the explanation to stderr and exits with status `2`. In Claude Code's hook lifecycle, exit code `2` on a `PreToolUse` hook blocks that specific tool call before it runs and surfaces the stderr text back to the agent as the reason — so the agent sees *why* its edit was stopped and can self-correct, in the same turn, without a human ever needing to notice a dashboard alert. A generic file/pipe-based fallback adapter (`DRIFTWATCH_ALERTS.md`) covers agents without native hook support, at the cost of being advisory rather than enforced — nothing guarantees another agent actually reads it.
 
 ---
 
