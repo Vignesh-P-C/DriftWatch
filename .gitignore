@@ -48,3 +48,5 @@ context/
 
 # Claude Code local overrides (personal, not shared config)
 .claude/settings.local.json
+DRIFTWATCH_ALERTS.md
+Notes/
