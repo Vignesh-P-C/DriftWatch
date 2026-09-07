@@ -3,7 +3,7 @@
 ![TypeScript](https://img.shields.io/badge/TYPESCRIPT-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![Node.js](https://img.shields.io/badge/NODE.JS-20.x-339933?style=for-the-badge&logo=node.js&logoColor=white)
 ![tree-sitter](https://img.shields.io/badge/PARSING-TREE--SITTER-orange?style=for-the-badge)
-![Phase](https://img.shields.io/badge/PHASE-2%20of%204-yellow?style=for-the-badge)
+![Phase](https://img.shields.io/badge/PHASE-3%20of%204-yellow?style=for-the-badge)
 ![License](https://img.shields.io/badge/LICENSE-MIT-blue?style=for-the-badge)
 
 > A tool that watches every active git worktree in a repository — yours, your teammates', and every AI coding agent's — and warns when a change in one will **semantically** break code in another, before git ever detects a textual conflict.
@@ -20,7 +20,7 @@ Existing multi-agent orchestration tools solve this via **isolation** (worktrees
 - Static symbol-graph diffing with tree-sitter — zero AI cost for the detection layer itself
 - Cross-worktree usage analysis to catch breakage before it ever reaches `git merge`
 - BYOK (Bring Your Own Key) LLM reasoning layer, multi-provider by design
-- Designed to feed a detected conflict directly into a *running* agent's context, not just a human dashboard
+- Feeds a detected conflict directly into a *running* agent's context, not just a human dashboard
 
 ---
 
@@ -44,7 +44,7 @@ Core principle: **cheap and local first, expensive and remote last.** Static ana
 |-------|-------|--------|
 | 1 — Static Foundation | Symbol overlap detection between two worktrees, zero AI, $0 cost | ✅ Working |
 | 2 — Live + Reasoning | File watching goes live; LLM layer explains severity and *why* something breaks | ✅ Working |
-| 3 — The Differentiator | Feed warnings into a *running* agent's context so it self-corrects | 📋 Planned |
+| 3 — The Differentiator | Feed warnings into a *running* agent's context so it self-corrects | ✅ Working |
 | 4 — Polish, Prove, Publish | Multi-language support, realism testing against real PR history, packaging, demo | 📋 Planned |
 
 The CLI has two modes. `check` runs a single comparison between two worktrees' committed history. `watch` runs continuously, reacting to live, uncommitted edits in either worktree — the mode built for working alongside an active agent or teammate.
@@ -76,6 +76,8 @@ The LLM layer isn't just flagging that something changed — in the same test ru
 
 ### Module Structure
 
+> ⚠️ **PLACEHOLDER — DO NOT COMMIT AS-IS.** This section is known incomplete. The real `src/` tree also contains `graph/inspect.ts`, `graph/walker.ts`, and `watcher/test-agent-adapter.ts`, none of which are described below, and the `agent/` module's three files are listed by filename only — their actual contents/purpose haven't been reviewed yet. This will be corrected once those six files are shared.
+
 ```
 src/
 ├── cli/
@@ -91,18 +93,26 @@ src/
 │   ├── builder.ts             # tree-sitter based symbol extraction from a source file
 │   ├── types.ts                # SymbolGraph data structure + helpers
 │   ├── usage.ts                 # Finds where a given symbol name is referenced across a worktree
-│   └── sample.ts                 # Manual test fixture used for end-to-end conflict scenarios
+│   ├── sample.ts                 # Manual test fixture used for end-to-end conflict scenarios
+│   ├── inspect.ts                # ⚠️ purpose not yet documented — pending file content
+│   └── walker.ts                 # ⚠️ purpose not yet documented — pending file content
 │
 ├── watcher/
-│   └── index.ts               # chokidar-based live watcher — debounced re-checks on file save
+│   ├── index.ts               # chokidar-based live watcher — debounced re-checks on file save
+│   └── test-agent-adapter.ts  # ⚠️ manual test/demo script for the agent adapter — not an automated test suite
 │
-└── reasoning/
-    ├── types.ts                # Provider-agnostic ReasoningProvider interface (BYOK contract)
-    ├── gemini.ts                # Gemini implementation — rate-limited, code-aware prompting
-    └── index.ts                 # Picks a provider from env vars; returns null if none configured
+├── reasoning/
+│   ├── types.ts                # Provider-agnostic ReasoningProvider interface (BYOK contract)
+│   ├── gemini.ts                # Gemini implementation — rate-limited, code-aware prompting
+│   └── index.ts                 # Picks a provider from env vars; returns null if none configured
+│
+└── agent/
+    ├── pretooluse-hook.ts     # ⚠️ purpose not yet documented — pending file content
+    ├── adapter.ts               # ⚠️ purpose not yet documented — pending file content
+    └── types.ts                  # ⚠️ purpose not yet documented — pending file content
 ```
 
-Phase 3 will add an `agent/` module (context injection adapters, feeding conflicts directly into a running agent rather than a human-facing output).
+Phase 3 added the `agent/` module: context injection adapters that feed conflicts directly into a running agent rather than a human-facing output. Currently supports a Claude Code `PreToolUse` hook, plus a generic file/pipe-based fallback adapter for non-Claude-Code agents.
 
 ### Key Design Decisions
 
@@ -124,6 +134,11 @@ Rather than inventing a new isolation mechanism, DriftWatch works directly with 
 **LLM reasoning gets real code, not just coordinates**
 The reasoning layer reads the actual source around both the changed declaration and the usage site and puts both in the prompt, rather than asking the LLM to reason from symbol names and line numbers alone. In testing, this was the difference between generic "could break" output on every candidate and correctly distinguishing safe refactors (rated LOW) from a real parameter-count mismatch (rated HIGH, with the specific discrepancy named).
 
+**Agent context injection over a human dashboard**
+Phase 3's `agent/` module hooks into Claude Code's `PreToolUse` event to inject a detected conflict directly into the running agent's context, so it can self-correct mid-task rather than a human having to notice a dashboard alert. A generic file/pipe-based fallback adapter covers agents without native hook support.
+
+*(This section will be expanded with real mechanism detail once `pretooluse-hook.ts`, `adapter.ts`, and `types.ts` are reviewed — right now it restates the commit messages, not verified implementation behavior.)*
+
 ---
 
 ## Tech Stack
@@ -135,6 +150,7 @@ The reasoning layer reads the actual source around both the changed declaration 
 | File watching | chokidar |
 | Git operations | Shell out to the `git` CLI directly |
 | LLM provider(s) | Multi-provider interface (BYOK); Gemini (`gemini-3.5-flash-lite`, free tier) implemented, more providers planned |
+| Agent integration | Claude Code `PreToolUse` hook, generic file/pipe fallback adapter |
 | Distribution (planned) | npm package + VS Code extension + GitHub Action, from one core engine |
 | License | MIT |
 
@@ -165,8 +181,8 @@ To try it against a real conflict scenario: set up a second worktree (`git workt
 | CLI conflict check command | ✅ Complete |
 | Live file watching (working-tree diffing, debounced) | ✅ Complete |
 | LLM severity + explanation layer, code-aware prompting (Gemini) | ✅ Complete |
+| Agent context injection adapter (Claude Code hook + fallback) | ✅ Complete |
 | Additional BYOK providers (Claude, OpenAI, local models) | 📋 Planned |
-| Agent context injection adapter | 📋 Planned |
 | Multi-language support beyond TS/JS | 📋 Planned |
 | VS Code extension | 📋 Planned |
 | GitHub Action | 📋 Planned |
