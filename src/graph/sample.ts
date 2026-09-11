@@ -8,13 +8,7 @@ class Calculator {
     this.total += n;
   }
 }
-<<<<<<< HEAD
-function useAdd() {
-  return add(2, 3);
-}
-=======
 
 function useAdd() {
   return add(2, 3);
 }
->>>>>>> test-branch-a
