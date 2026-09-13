@@ -89,7 +89,7 @@ export function watch(pathA: string, pathB: string): void {
   };
 
   const watcher = chokidar.watch([pathA, pathB], {
-  ignored: /node_modules|\.git|\.driftwatch/,
+  ignored: /node_modules|\.git|\.driftwatch|DRIFTWATCH_ALERTS\.md/,
   ignoreInitial: true,
   });
 
