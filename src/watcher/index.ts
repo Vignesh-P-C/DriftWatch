@@ -5,7 +5,7 @@ import { detectConflicts } from "../detector/overlap.js";
 import { getReasoningProvider } from "../reasoning/index.js";
 import { writeState, writeFallbackAlerts } from "../agent/adapter.js";
 import { ExplainedConflict } from "../agent/types.js";
-
+import { mapWithConcurrency } from "../reasoning/concurrency.js";
 
 const DEBOUNCE_MS = 300;
 const reasoningProvider = getReasoningProvider();
@@ -33,7 +33,6 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
   }
 
   console.log(`[${timestamp}] Found ${candidates.length} conflict candidate(s):`);
-  const explained: ExplainedConflict[] = [];
 
   for (const c of candidates) {
     console.log(
@@ -41,20 +40,36 @@ async function runCheck(pathA: string, pathB: string): Promise<void> {
         `(${c.changedAt.filePath}:${c.changedAt.startLine}-${c.changedAt.endLine}), ` +
         `used in worktree ${c.usedIn} at ${c.usageLocation.filePath}:${c.usageLocation.line}`
     );
+  }
 
-    if (reasoningProvider) {
-      try {
-        const explanation = await reasoningProvider.explainConflict(c);
-        console.log(`    [${explanation.severity.toUpperCase()}] ${explanation.explanation}`);
-        explained.push({ candidate: c, explanation });
-      } catch (err) {
-        console.log(`    (reasoning failed: ${(err as Error).message})`);
-        // Deliberately not pushed to `explained` — a candidate whose reasoning
-        // call failed has no severity, so it can't be evaluated by the hook.
-        // Excluding it means "fail open" for that one candidate specifically,
-        // not just at the whole-state level.
+  const explained: ExplainedConflict[] = [];
+
+  if (reasoningProvider) {
+    // Bounded concurrency, not a bare Promise.all — keeps the number of
+    // simultaneous Gemini calls under a configurable cap instead of firing
+    // one request per candidate at once. Google no longer publishes a fixed
+    // free-tier RPM table (it's per-project now, visible in AI Studio), so
+    // this defaults conservative; raise DRIFTWATCH_LLM_CONCURRENCY once you've
+    // checked your project's actual current limit.
+    const concurrency = Number(process.env.DRIFTWATCH_LLM_CONCURRENCY) || 3;
+
+    const results = await mapWithConcurrency(candidates, concurrency, (c) =>
+      reasoningProvider.explainConflict(c)
+    );
+
+    results.forEach((result, i) => {
+      const c = candidates[i];
+      if (result.status === "fulfilled") {
+        console.log(`    [${result.value.severity.toUpperCase()}] ${result.value.explanation}`);
+        explained.push({ candidate: c, explanation: result.value });
+      } else {
+        console.log(`    (reasoning failed for "${c.symbolName}": ${(result.reason as Error).message})`);
+
+        // Same "fail open per candidate" behavior as before — a candidate
+        // whose reasoning call failed has no severity, so it can't be
+        // evaluated by the hook, and is deliberately excluded from `explained`.
       }
-    }
+    });
   }
 
   if (reasoningProvider) {
