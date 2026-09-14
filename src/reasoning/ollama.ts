@@ -35,6 +35,11 @@ export class OllamaReasoningProvider implements ReasoningProvider {
           prompt,
           stream: false,
           format: "json",
+          // Ollama defaults temperature to 0.8, tuned for open-ended/creative
+          // generation. This task is a factual comparison with one correct
+          // answer, not creative writing, so a much lower temperature reduces
+          // the model's tendency to guess or hallucinate unrelated details.
+          options: { temperature: 0.1 },
         }),
       });
     } catch (err) {

@@ -30,7 +30,12 @@ export class GeminiReasoningProvider implements ReasoningProvider {
   async explainConflict(candidate: ConflictCandidate): Promise<ConflictExplanation> {
     await waitForRateLimit();
 
-    const model = this.client.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
+    const model = this.client.getGenerativeModel({
+      model: "gemini-3.5-flash-lite",
+      // Same reasoning as Ollama's temperature setting: this is a factual
+      // comparison task with one correct answer, not creative writing.
+      generationConfig: { temperature: 0.1 },
+    });
     const prompt = buildConflictPrompt(candidate);
 
     const result = await model.generateContent(prompt);
